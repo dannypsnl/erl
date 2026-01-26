@@ -153,5 +153,8 @@
   (check-equal? (gen-server:call counter 'get) 7)
   (check-equal? (gen-server:call counter `(add 5)) 12)
 
-  (gen-server:stop counter)
+  (register 'c counter)
+  (check-equal? (gen-server:call 'c 'get) 12)
+
+  (gen-server:stop 'c)
   )
