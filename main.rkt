@@ -103,7 +103,10 @@
   (define counter (gen-server:start (new my-counter%) '(1)))
   (check-equal? (gen-server:call counter 'get) 1)
   (check-equal? (gen-server:call counter `(add 5)) 6)
+
   (gen-server:cast! counter 'inc)
   (sleep 0.1)
   (check-equal? (gen-server:call counter 'get) 7)
+  (check-equal? (gen-server:call counter 'get) 7)
+  (check-equal? (gen-server:call counter `(add 5)) 12)
   )
