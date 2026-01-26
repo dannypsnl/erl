@@ -10,6 +10,30 @@
 (define gen-server%
   (class object%
     (super-new)
+
+    (define/private (server-loop state)
+      (match (thread-receive)
+        [(list 'call from msg)
+         (handle-call msg from state)]
+        [(list 'cast msg)
+         (handle-cast msg state)]
+        [(list 'info msg)
+         (handle-info msg state)]
+        [(list 'stop reason)
+         (terminate reason state)]))
+
+    (define/public (ok state)
+      (server-loop state))
+
+    (define/public (reply from response state)
+      ; reply response
+      (thread-send from response)
+      ; loop with new state
+      (server-loop state))
+
+    (define/public (noreply state)
+      (server-loop state))
+
     (define/public (init args)
       (error 'gen-server "init method must be overridden"))
     (define/public (handle-call msg from state)
@@ -17,44 +41,21 @@
     (define/public (handle-cast msg state)
       (error 'gen-server "handle-cast method must be overridden"))
     (define/public (handle-info msg state)
-      (void))
+      (noreply state))
     (define/public (terminate reason state)
-      (void))))
+      (void))
 
-(struct ok (state))
-(struct reply (response state))
-(struct noreply (state))
+    (define/private (run init-args)
+      (define initial-state (init init-args))
+      (server-loop initial-state))
 
-(define (server-loop impl state)
-  (match (thread-receive)
-    [(list 'call from msg)
-     (match-define (reply response new-state)
-       (send impl handle-call msg from state))
-     (thread-send from response)
-     (server-loop impl new-state)]
-
-    [(list 'cast msg)
-     (match-define (noreply new-state)
-       (send impl handle-cast msg state))
-     (server-loop impl new-state)]
-
-    [(list 'info msg)
-     (match-define (noreply new-state)
-       (send impl handle-info msg state))
-     (server-loop impl new-state)]
-
-    [(list 'stop reason)
-     (send impl terminate reason state)]))
+    (define/public (start init-args)
+      (thread
+        (lambda ()
+          (run init-args))))))
 
 (define (gen-server:start impl init-args)
-  (thread
-    (lambda ()
-      (match (send impl init init-args)
-        [(ok initial-state)
-          (server-loop impl initial-state)]
-        [init-result
-          (error 'gen-server-start "init must return (ok state), got: ~a" init-result)]))
-    ))
+  (send impl start init-args))
 
 (define (gen-server:call server msg)
   (thread-send server (list 'call (current-thread) msg))
@@ -69,6 +70,7 @@
   (define my-counter%
     (class gen-server%
       (super-new)
+      (inherit ok noreply reply)
 
       (define/override (init args)
         (match-define (list n) args)
@@ -78,12 +80,12 @@
         (match msg
           ['increment
            (define new-val (add1 (counter-state-value state)))
-           (reply new-val (counter-state new-val))]
+           (reply from new-val (counter-state new-val))]
           ['get
-           (reply (counter-state-value state) state)]
+           (reply from (counter-state-value state) state)]
           [(list 'add n)
            (define new-val (+ (counter-state-value state) n))
-           (reply new-val (counter-state new-val))]))
+           (reply from new-val (counter-state new-val))]))
 
       (define/override (handle-cast msg state)
         (match msg
