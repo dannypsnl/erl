@@ -2,6 +2,7 @@
 (provide supervisor%
          supervisor:start
          supervisor:stop
+         supervisor:start-child
          supervisor:which-children
          child-spec)
 (require racket/class
@@ -15,6 +16,8 @@
   (gen-server:stop supervisor reason))
 (define (supervisor:which-children supervisor)
   (gen-server:call supervisor 'which-children))
+(define (supervisor:start-child supervisor spec)
+  (gen-server:call supervisor (list 'start-child spec)))
 
 ;; Child spec struct
 ;; start-thunk: a thunk that returns a running server
@@ -82,7 +85,22 @@
     (define/override (handle-call msg from state)
       (match msg
         ['which-children
-         (reply from (hash-keys (sup-state-children state)) state)]))
+         (reply (hash-keys (sup-state-children state)) state)]
+        [(list 'start-child spec)
+         (define id (child-spec--id spec))
+         (define children (sup-state-children state))
+         (define child-specs (sup-state-child-specs state))
+         (cond
+           [(hash-has-key? children id)
+            (reply (list 'error 'already-started) state)]
+           [else
+            (define server (start-child spec))
+            (hash-set! children id server)
+            (hash-set! child-specs id spec)
+            ;; Restart monitor with updated children
+            (kill-thread (sup-state-monitor-thread state))
+            (define new-monitor (make-monitor (get-field channel this) children))
+            (reply (list 'ok id) (sup-state children child-specs new-monitor))])]))
 
     (define/override (handle-cast msg state)
       (match msg
@@ -120,8 +138,8 @@
       (define/override (handle-call msg from state)
         (match msg
           ['get
-           (reply from (counter-state-value state) state)]
-          [_ (reply from 'unknown state)]))
+           (reply (counter-state-value state) state)]
+          [_ (reply 'unknown state)]))
 
       (define/override (handle-cast msg state)
         (match msg
@@ -156,4 +174,42 @@
   (check-equal? (gen-server:call 'counter1 'get) 10)
 
   ;; Clean up
-  (supervisor:stop sup))
+  (supervisor:stop sup)
+
+  ;; Test dynamic-start-child
+  (define sup2 (supervisor:start
+                (new supervisor%)
+                (list (child-spec #:id 'counter1
+                                  #:start (lambda () (gen-server:start (new my-counter%) '(10)))))))
+
+  ;; Initially only one child
+  (check-equal? (length (supervisor:which-children sup2)) 1)
+
+  ;; Dynamically add a new child
+  (define result (supervisor:start-child
+                  sup2
+                  (child-spec #:id 'counter3
+                              #:start (lambda () (gen-server:start (new my-counter%) '(30))))))
+  (check-equal? result '(ok counter3))
+
+  ;; Now we have two children
+  (check-equal? (length (supervisor:which-children sup2)) 2)
+  (check-not-false (member 'counter3 (supervisor:which-children sup2)))
+
+  ;; Verify the new child works
+  (check-equal? (gen-server:call 'counter3 'get) 30)
+
+  ;; Try to add a duplicate child
+  (define dup-result (supervisor:start-child
+                      sup2
+                      (child-spec #:id 'counter3
+                                  #:start (lambda () (gen-server:start (new my-counter%) '(99))))))
+  (check-equal? dup-result '(error already-started))
+
+  ;; Kill counter3 and verify it restarts
+  (gen-server:cast! 'counter3 'die)
+  (sleep 0.1)
+  (check-equal? (gen-server:call 'counter3 'get) 30)
+
+  ;; Clean up
+  (supervisor:stop sup2))

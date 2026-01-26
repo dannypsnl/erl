@@ -10,6 +10,7 @@
          supervisor%
          supervisor:start
          supervisor:stop
+         supervisor:start-child
          supervisor:which-children
          child-spec)
 (require "genserver.rkt"
