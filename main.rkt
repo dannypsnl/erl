@@ -2,6 +2,7 @@
 (provide gen-server%
          gen-server:start
          gen-server:call
+         gen-server:cast!
          )
 (require racket/class
          racket/match
@@ -10,6 +11,8 @@
 (define gen-server%
   (class object%
     (super-new)
+
+    (init-field [running-server #f])
 
     (define/private (server-loop state)
       (match (thread-receive)
@@ -20,7 +23,8 @@
         [(list 'info msg)
          (handle-info msg state)]
         [(list 'stop reason)
-         (terminate reason state)]))
+         (terminate reason state)
+         (kill-thread running-server)]))
 
     (define/public (ok state)
       (server-loop state))
@@ -45,14 +49,13 @@
     (define/public (terminate reason state)
       (void))
 
-    (define/private (run init-args)
-      (define initial-state (init init-args))
-      (server-loop initial-state))
-
     (define/public (start init-args)
-      (thread
-        (lambda ()
-          (run init-args))))))
+      (set-field! running-server this
+        (thread
+          (lambda ()
+            (define initial-state (init init-args))
+            (server-loop initial-state))))
+      running-server)))
 
 (define (gen-server:start impl init-args)
   (send impl start init-args))
