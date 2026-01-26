@@ -102,34 +102,72 @@ typically override @racket[handle-call] and @racket[handle-cast] to handle messa
   Returns the running server instance.
 }
 
-@defproc[(gen-server:call [server (is-a?/c gen-server%)] [msg any/c]) any/c]{
+@defproc[(gen-server:call [server (or/c (is-a?/c gen-server%) symbol?)] [msg any/c]) any/c]{
   Sends a synchronous message to the server and waits for a response.
 
-  @racket[server] is the server instance.
+  @racket[server] is the server instance or registered name.
   @racket[msg] is the message to send.
 
   Returns the response from the server's @racket[handle-call] method.
 }
 
-@defproc[(gen-server:cast! [server (is-a?/c gen-server%)] [msg any/c]) void?]{
+@defproc[(gen-server:cast! [server (or/c (is-a?/c gen-server%) symbol?)] [msg any/c]) void?]{
   Sends an asynchronous message to the server without waiting for a response.
 
-  @racket[server] is the server instance.
+  @racket[server] is the server instance or registered name.
   @racket[msg] is the message to send.
 
   The message is handled by the server's @racket[handle-cast] method.
 }
 
-@defproc[(gen-server:stop [server (is-a?/c gen-server%)] [reason any/c 'normal]) void?]{
+@defproc[(gen-server:stop [server (or/c (is-a?/c gen-server%) symbol?)] [reason any/c 'normal]) void?]{
   Stops a running server.
 
-  @racket[server] is the server instance to stop.
+  @racket[server] is the server instance or registered name.
   @racket[reason] is the termination reason; defaults to @racket['normal].
 
   Triggers the server's @racket[terminate] callback before shutting down.
 }
 
-@subsection{Example}
+@section{Process Registration}
+
+The process registry allows servers to be registered with symbolic names,
+enabling location-transparent messaging.
+
+@defproc[(register [id symbol?] [server (is-a?/c gen-server%)]) void?]{
+  Registers a server with the given name in the global registry.
+
+  @racket[id] is the symbolic name to register.
+  @racket[server] is the server instance to associate with the name.
+}
+
+@defproc[(unregister [id symbol?]) void?]{
+  Removes a server from the global registry.
+
+  @racket[id] is the symbolic name to unregister.
+}
+
+@defproc[(whereis [id symbol?]) (or/c (is-a?/c gen-server%) #f)]{
+  Looks up a registered server by name.
+
+  @racket[id] is the symbolic name to look up.
+
+  Returns the server instance if found, or @racket[#f] if not registered.
+}
+
+Once a server is registered, @racket[gen-server:call], @racket[gen-server:cast!], and
+@racket[gen-server:stop] can accept either the server instance or its registered name:
+
+@racketblock[
+(define counter (gen-server:start (new my-counter%) '(0)))
+(register 'my-counter counter)
+
+(code:comment "Both of these work:")
+(gen-server:call counter 'get)
+(gen-server:call 'my-counter 'get)
+]
+
+@subsection{Gen-Server Example}
 
 Here's a complete example of implementing a counter server:
 
@@ -172,4 +210,79 @@ Here's a complete example of implementing a counter server:
 
 (code:comment "Stop the server")
 (gen-server:stop counter)
+]
+
+@section{Supervisor}
+
+Supervisors manage a set of child processes, automatically restarting them according to
+a specified restart strategy when they crash.
+
+@defclass[supervisor% gen-server% ()]{
+  Base class for implementing supervisors. Extends @racket[gen-server%] to provide
+  child process management with automatic restart capabilities.
+
+  The supervisor monitors all children and restarts them based on their restart policy.
+}
+
+@defproc[(supervisor:start [impl (is-a?/c supervisor%)] [child-specs (listof child-spec?)]) (is-a?/c supervisor%)]{
+  Starts a supervisor with the given child specifications.
+
+  @racket[impl] is an instance of @racket[supervisor%].
+  @racket[child-specs] is a list of child specifications created with @racket[child-spec].
+
+  Returns the running supervisor instance.
+}
+
+@defproc[(supervisor:stop [supervisor (is-a?/c supervisor%)] [reason any/c 'normal]) void?]{
+  Stops a supervisor and all its children.
+
+  @racket[supervisor] is the supervisor instance to stop.
+  @racket[reason] is the termination reason; defaults to @racket['normal].
+
+  All children are stopped with reason @racket['shutdown] before the supervisor terminates.
+}
+
+@defproc[(supervisor:which-children [supervisor (is-a?/c supervisor%)]) (listof symbol?)]{
+  Returns a list of child IDs managed by the supervisor.
+
+  @racket[supervisor] is the supervisor instance.
+}
+
+@defproc[(child-spec [#:id id symbol?] [#:start start-thunk (-> (is-a?/c gen-server%))] [#:restart restart (or/c 'permanent 'temporary 'transient) 'permanent]) child-spec?]{
+  Creates a child specification for use with a supervisor.
+
+  @racket[id] is a unique symbolic identifier for the child.
+  @racket[start-thunk] is a thunk that starts and returns a running server.
+  @racket[restart] specifies the restart strategy:
+  @itemlist[
+    @item{@racket['permanent] — Always restart the child when it terminates (default)}
+    @item{@racket['temporary] — Never restart the child}
+    @item{@racket['transient] — Restart only on abnormal termination}
+  ]
+}
+
+@subsection{Supervisor Example}
+
+Here's an example of using a supervisor to manage counter servers:
+
+@racketblock[
+(define sup (supervisor:start
+             (new supervisor%)
+             (list (child-spec #:id 'counter1
+                               #:start (lambda () (gen-server:start (new my-counter%) '(10))))
+                   (child-spec #:id 'counter2
+                               #:start (lambda () (gen-server:start (new my-counter%) '(20)))
+                               #:restart 'transient))))
+
+(code:comment "Children are automatically registered by their ID")
+(gen-server:call 'counter1 'get)  (code:comment "=> 10")
+(gen-server:call 'counter2 'get)  (code:comment "=> 20")
+
+(code:comment "List managed children")
+(supervisor:which-children sup)   (code:comment "=> '(counter1 counter2)")
+
+(code:comment "If counter1 crashes, it will be automatically restarted")
+
+(code:comment "Stop the supervisor and all children")
+(supervisor:stop sup)
 ]
