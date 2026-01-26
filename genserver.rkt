@@ -16,8 +16,6 @@
 (define *registry* (make-hash))
 
 (define (register id server)
-  (when (hash-has-key? *registry* id)
-    (error 'register "name ~a is already registered" id))
   (hash-set! *registry* id server))
 
 (define (unregister id)

@@ -139,8 +139,6 @@ enabling location-transparent messaging.
 
   @racket[id] is the symbolic name to register.
   @racket[server] is the server instance to associate with the name.
-
-  Raises an error if @racket[id] is already registered.
 }
 
 @defproc[(unregister [id symbol?]) void?]{
