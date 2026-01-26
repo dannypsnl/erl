@@ -41,7 +41,7 @@ typically override @racket[handle-call] and @racket[handle-cast] to handle messa
   @racket[from] is a reply channel for sending the response.
   @racket[state] is the current server state.
 
-  Should return by calling @racket[(reply from response new-state)] to send a response
+  Should return by calling @racket[(reply response new-state)] to send a response
   and continue with updated state.
 }
 
@@ -77,10 +77,9 @@ typically override @racket[handle-call] and @racket[handle-cast] to handle messa
   Used in @racket[init] to return the initial state.
 }
 
-@defmethod[(reply [from async-channel?] [response any/c] [state any/c]) any/c]{
+@defmethod[(reply [response any/c] [state any/c]) any/c]{
   Helper method to send a reply to a synchronous call and continue the server loop.
 
-  @racket[from] is the reply channel from @racket[handle-call].
   @racket[response] is the value to send back to the caller.
   @racket[state] is the new state to continue with.
 }
@@ -248,6 +247,18 @@ a specified restart strategy when they crash.
   @racket[supervisor] is the supervisor instance.
 }
 
+@defproc[(supervisor:start-child [supervisor (is-a?/c supervisor%)] [spec child-spec?]) (or/c (list/c 'ok symbol?) (list/c 'error 'already-started))]{
+  Dynamically starts a new child under the supervisor.
+
+  @racket[supervisor] is the supervisor instance.
+  @racket[spec] is a child specification created with @racket[child-spec].
+
+  Returns @racket['(ok id)] on success where @racket[id] is the child's identifier,
+  or @racket['(error already-started)] if a child with the same ID already exists.
+
+  The newly started child is automatically registered and monitored by the supervisor.
+}
+
 @defproc[(child-spec [#:id id symbol?] [#:start start-thunk (-> (is-a?/c gen-server%))] [#:restart restart (or/c 'permanent 'temporary 'transient) 'permanent]) child-spec?]{
   Creates a child specification for use with a supervisor.
 
@@ -282,6 +293,14 @@ Here's an example of using a supervisor to manage counter servers:
 (supervisor:which-children sup)   (code:comment "=> '(counter1 counter2)")
 
 (code:comment "If counter1 crashes, it will be automatically restarted")
+
+(code:comment "Dynamically add a new child at runtime")
+(supervisor:start-child sup
+  (child-spec #:id 'counter3
+              #:start (lambda () (gen-server:start (new my-counter%) '(30)))))
+(code:comment "=> '(ok counter3)")
+
+(gen-server:call 'counter3 'get)  (code:comment "=> 30")
 
 (code:comment "Stop the supervisor and all children")
 (supervisor:stop sup)
