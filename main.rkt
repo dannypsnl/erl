@@ -3,6 +3,7 @@
          gen-server:start
          gen-server:call
          gen-server:cast!
+         gen-server:stop
          )
 (require racket/class
          racket/match
@@ -25,7 +26,8 @@
          (handle-info msg state)]
         [(list 'stop reason)
          (terminate reason state)
-         (kill-thread running-server)]))
+         (kill-thread running-server)
+         (set-field! channel this #f)]))
 
     (define/public (ok state)
       (server-loop state))
@@ -69,6 +71,8 @@
   (async-channel-get reply-channel))
 (define (gen-server:cast! server msg)
   (async-channel-put (get-field channel server) (list 'cast msg)))
+(define (gen-server:stop server [reason 'normal])
+  (async-channel-put (get-field channel server) (list 'stop reason)))
 
 (module+ test
   (require rackunit)
@@ -116,4 +120,6 @@
   (check-equal? (gen-server:call counter 'get) 7)
   (check-equal? (gen-server:call counter 'get) 7)
   (check-equal? (gen-server:call counter `(add 5)) 12)
+
+  (gen-server:stop counter)
   )
