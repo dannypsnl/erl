@@ -6,16 +6,17 @@
          )
 (require racket/class
          racket/match
-         racket/future)
+         racket/async-channel)
 
 (define gen-server%
   (class object%
     (super-new)
 
-    (init-field [running-server #f])
+    (init-field [running-server #f]
+                [channel #f])
 
     (define/private (server-loop state)
-      (match (thread-receive)
+      (match (async-channel-get channel)
         [(list 'call from msg)
          (handle-call msg from state)]
         [(list 'cast msg)
@@ -31,7 +32,7 @@
 
     (define/public (reply from response state)
       ; reply response
-      (thread-send from response)
+      (async-channel-put from response)
       ; loop with new state
       (server-loop state))
 
@@ -50,21 +51,24 @@
       (void))
 
     (define/public (start init-args)
+      (set-field! channel this (make-async-channel))
       (set-field! running-server this
         (thread
+          #:pool 'own
           (lambda ()
             (define initial-state (init init-args))
             (server-loop initial-state))))
-      running-server)))
+      this)))
 
 (define (gen-server:start impl init-args)
   (send impl start init-args))
 
 (define (gen-server:call server msg)
-  (thread-send server (list 'call (current-thread) msg))
-  (thread-receive))
+  (define reply-channel (make-async-channel))
+  (async-channel-put (get-field channel server) (list 'call reply-channel msg))
+  (async-channel-get reply-channel))
 (define (gen-server:cast! server msg)
-  (thread-send server (list 'cast msg)))
+  (async-channel-put (get-field channel server) (list 'cast msg)))
 
 (module+ test
   (require rackunit)
