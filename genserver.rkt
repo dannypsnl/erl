@@ -49,12 +49,15 @@
     (super-new)
 
     (init-field [running-server #f]
-                [channel #f])
+                [channel #f]
+                [current-from #f])
 
     (define/private (server-loop state)
       (match (async-channel-get channel)
         [(list 'call from msg)
-         (handle-call msg from state)]
+         (set! current-from from)
+         (handle-call msg from state)
+         (set! current-from #f)]
         [(list 'cast msg)
          (handle-cast msg state)]
         [(list 'info msg)
@@ -67,9 +70,9 @@
     (define/public (ok state)
       (server-loop state))
 
-    (define/public (reply from response state)
+    (define/public (reply response state)
       ; reply response
-      (async-channel-put from response)
+      (async-channel-put current-from response)
       ; loop with new state
       (server-loop state))
 
@@ -121,12 +124,12 @@
         (match msg
           ['increment
            (define new-val (add1 (counter-state-value state)))
-           (reply from new-val (counter-state new-val))]
+           (reply new-val (counter-state new-val))]
           ['get
-           (reply from (counter-state-value state) state)]
+           (reply (counter-state-value state) state)]
           [(list 'add n)
            (define new-val (+ (counter-state-value state) n))
-           (reply from new-val (counter-state new-val))]))
+           (reply new-val (counter-state new-val))]))
 
       (define/override (handle-cast msg state)
         (match msg
