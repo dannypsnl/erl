@@ -27,7 +27,7 @@
         [(list 'stop reason)
          (terminate reason state)
          (kill-thread running-server)
-         (set-field! channel this #f)]))
+         (set! channel #f)]))
 
     (define/public (ok state)
       (server-loop state))
@@ -53,8 +53,8 @@
       (void))
 
     (define/public (start init-args)
-      (set-field! channel this (make-async-channel))
-      (set-field! running-server this
+      (set! channel (make-async-channel))
+      (set! running-server
         (thread
           #:pool 'own
           (lambda ()
