@@ -3,5 +3,14 @@
          gen-server:start
          gen-server:call
          gen-server:cast!
-         gen-server:stop)
-(require "genserver.rkt")
+         gen-server:stop
+         register
+         unregister
+         whereis
+         supervisor%
+         supervisor:start
+         supervisor:stop
+         supervisor:which-children
+         child-spec)
+(require "genserver.rkt"
+         "supervisor.rkt")

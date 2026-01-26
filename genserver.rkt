@@ -3,21 +3,45 @@
          gen-server:start
          gen-server:call
          gen-server:cast!
-         gen-server:stop)
+         gen-server:stop
+         register
+         unregister
+         whereis)
 (require racket/class
          racket/match
          racket/async-channel)
 (require version/utils)
 
+;; Global process registry
+(define *registry* (make-hash))
+
+(define (register id server)
+  (hash-set! *registry* id server))
+
+(define (unregister id)
+  (hash-remove! *registry* id))
+
+(define (whereis id)
+  (hash-ref *registry* id #f))
+
 (define (gen-server:start impl init-args)
   (send impl start init-args))
-(define (gen-server:call server msg)
+
+(define (resolve-server server-or-id)
+  (if (symbol? server-or-id)
+      (whereis server-or-id)
+      server-or-id))
+
+(define (gen-server:call server-or-id msg)
+  (define server (resolve-server server-or-id))
   (define reply-channel (make-async-channel))
   (async-channel-put (get-field channel server) (list 'call reply-channel msg))
   (async-channel-get reply-channel))
-(define (gen-server:cast! server msg)
+(define (gen-server:cast! server-or-id msg)
+  (define server (resolve-server server-or-id))
   (async-channel-put (get-field channel server) (list 'cast msg)))
-(define (gen-server:stop server [reason 'normal])
+(define (gen-server:stop server-or-id [reason 'normal])
+  (define server (resolve-server server-or-id))
   (async-channel-put (get-field channel server) (list 'stop reason)))
 
 (define gen-server%
