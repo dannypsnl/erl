@@ -7,6 +7,7 @@
 (require racket/class
          racket/match
          racket/async-channel)
+(require version/utils)
 
 (define (gen-server:start impl init-args)
   (send impl start init-args))
@@ -65,11 +66,18 @@
     (define/public (start init-args)
       (set! channel (make-async-channel))
       (set! running-server
-            (thread
-             #:pool 'own
-             (lambda ()
-               (define initial-state (init init-args))
-               (server-loop initial-state))))
+            (cond
+              [(version<=? "9.0" (version))
+               (thread
+                #:pool 'own
+                (lambda ()
+                  (define initial-state (init init-args))
+                  (server-loop initial-state)))]
+              [else
+               (thread
+                (lambda ()
+                  (define initial-state (init init-args))
+                  (server-loop initial-state)))]))
       this)))
 
 (module+ test
