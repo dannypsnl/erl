@@ -50,14 +50,13 @@
 
     (init-field [running-server #f]
                 [channel #f]
-                [current-from #f])
+                [current-from (make-parameter #f)])
 
     (define/private (server-loop state)
       (match (async-channel-get channel)
         [(list 'call from msg)
-         (set! current-from from)
-         (handle-call msg from state)
-         (set! current-from #f)]
+         (parameterize ([current-from from])
+           (handle-call msg from state))]
         [(list 'cast msg)
          (handle-cast msg state)]
         [(list 'info msg)
@@ -72,7 +71,7 @@
 
     (define/public (reply response state)
       ; reply response
-      (async-channel-put current-from response)
+      (async-channel-put (current-from) response)
       ; loop with new state
       (server-loop state))
 
