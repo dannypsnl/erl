@@ -125,6 +125,14 @@
 (module+ test
   (require rackunit)
 
+  ;; The crashes below are intentional; keep them off stderr so `raco test`
+  ;; (and the package server) don't treat the output as a failure.
+  (define default-error-display (error-display-handler))
+  (error-display-handler
+   (lambda (msg exn)
+     (unless (regexp-match? #rx"intentional crash" msg)
+       (default-error-display msg exn))))
+
   (struct counter-state (value))
   (define my-counter%
     (class gen-server%
